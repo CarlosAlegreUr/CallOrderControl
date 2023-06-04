@@ -37,7 +37,7 @@ describe("CallOrderControl.sol tests", function () {
 
   describe("Tests when calls must be called in a sequence.", function () {
     describe("Internal functionalities tests.", function () {
-      it("Allowed call is stored and accessed correctly.", async () => {
+      it("Allowed call is stored and accessed correctly and isSequence is updated correctly.", async () => {
         // Values for functions are stored correctly and event is emitted.
         let txResponse = await callOrderControlContract.callAllowFuncCallsFor(
           client1,
@@ -55,10 +55,12 @@ describe("CallOrderControl.sol tests", function () {
         assert.equal(validCallsEmitted, funcSelec1);
 
         let allowedCalls = await callOrderControlContract.getAllowedFuncCalls(
-          client1,
-          true
+          client1
         );
         assert.equal(allowedCalls[0], funcSelec1);
+
+        let sequence = await callOrderControlContract.getIsSequence(client1);
+        assert.equal(sequence, true);
 
         // Same values for same function but different client are stored correctly.
         await callOrderControlContract.callAllowFuncCallsFor(
@@ -68,8 +70,7 @@ describe("CallOrderControl.sol tests", function () {
         );
 
         allowedCalls = await callOrderControlContract.getAllowedFuncCalls(
-          client2,
-          true
+          client2
         );
         assert.equal(allowedCalls[0], funcSelec1);
       });
@@ -82,8 +83,7 @@ describe("CallOrderControl.sol tests", function () {
         );
 
         let allowedCalls = await callOrderControlContract.getAllowedFuncCalls(
-          client1,
-          true
+          client1
         );
         assert.equal(allowedCalls[0], funcSelec1);
         assert.equal(allowedCalls[1], funcSelec2);
@@ -162,7 +162,7 @@ describe("CallOrderControl.sol tests", function () {
 
   describe("Tests when Calls can be called in any order.", function () {
     describe("Internal functionalities tests.", function () {
-      it("Allowed call is stored and accessed correctly.", async () => {
+      it("Allowed call is stored and accessed correctly and isSequence is updated correctly.", async () => {
         // Values for functions are stored correctly and event is emitted.
         let txResponse = await callOrderControlContract.callAllowFuncCallsFor(
           client1,
@@ -180,10 +180,12 @@ describe("CallOrderControl.sol tests", function () {
         assert.equal(validCallsEmitted, funcSelec1);
 
         let allowedCalls = await callOrderControlContract.getAllowedFuncCalls(
-          client1,
-          false
+          client1
         );
         assert.equal(allowedCalls[0], funcSelec1);
+
+        let sequence = await callOrderControlContract.getIsSequence(client1);
+        assert.equal(sequence, false);
 
         // Same values for same function but different client are stored correctly.
         await callOrderControlContract.callAllowFuncCallsFor(
@@ -193,8 +195,7 @@ describe("CallOrderControl.sol tests", function () {
         );
 
         allowedCalls = await callOrderControlContract.getAllowedFuncCalls(
-          client2,
-          false
+          client2
         );
         assert.equal(allowedCalls[0], funcSelec1);
       });
@@ -254,6 +255,59 @@ describe("CallOrderControl.sol tests", function () {
 
         await expect(
           useCaseContractClient1.changeData(1)
+        ).revertedWithCustomError(
+          useCaseContractClient1,
+          "CallOrderControl__NotAllowedCall"
+        );
+      });
+
+      it("Correct funcToCallsLeft mapping reset.", async () => {
+        await useCaseContract.callAllowFuncCallsFor(
+          client1,
+          [funcSelec1, funcSelec2, funcSelec1],
+          false
+        );
+
+        // Permission given, should not revert.
+        await useCaseContractClient1.changeData(1);
+        let number = await useCaseContractClient1.getNumber();
+        assert.equal(1, number);
+
+        await useCaseContractClient1.incrementData(1);
+        number = await useCaseContractClient1.getNumber();
+        assert.equal(2, number);
+
+        // Client didn't use all calls but we are giving new ones,
+        // should overwrite.
+        await useCaseContract.callAllowFuncCallsFor(
+          client1,
+          [funcSelec1, funcSelec2, funcSelec1],
+          false
+        );
+
+        await useCaseContractClient1.changeData(1);
+        number = await useCaseContractClient1.getNumber();
+        assert.equal(1, number);
+
+        await useCaseContractClient1.changeData(1);
+        number = await useCaseContractClient1.getNumber();
+        assert.equal(1, number);
+
+        // As overwritten, even before we had 1 call left,
+        // only 2 calls should be allowed.
+        await expect(
+          useCaseContractClient1.changeData(1)
+        ).revertedWithCustomError(
+          useCaseContractClient1,
+          "CallOrderControl__NotAllowedCall"
+        );
+
+        await useCaseContractClient1.incrementData(1);
+        number = await useCaseContractClient1.getNumber();
+        assert.equal(2, number);
+
+        await expect(
+          useCaseContractClient1.incrementData(1)
         ).revertedWithCustomError(
           useCaseContractClient1,
           "CallOrderControl__NotAllowedCall"
